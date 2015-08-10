@@ -1,17 +1,10 @@
-= Ritzy Editor Contributor Guide
-Raman Gupta <raman@vivosys.com>
-v1.0, 2015-06-15
+= Ritzy Editor Development Guide
+Raman Gupta <rocketraman@gmail.com>
+v1.0, 2015-08-10
 :toc:
 
-TODO: example: https://github.com/puppetlabs/puppet/blob/master/CONTRIBUTING.md
-
 [[source]]
-== Source
-
-TODO
-
-The source is on GitHub: https://github.com/rocketraman/ritzy-editor.
-Documentation and issues are also managed there.
+== Policies
 
 === Commit Message Style
 
@@ -19,15 +12,8 @@ All git commits should conform to idiomatic git commit message style
 http://tbaggery.com/2008/04/19/a-note-about-git-commit-messages.html[described
 by Tim Pope] and http://chris.beams.io/posts/git-commit/[expanded on by others].
 
-[[cla]]
-== Submitting Changes
-
-* Sign the http://TODO[Contributor License Agreement].
-* Push your changes to a topic branch in your fork of the repository.
-* Submit a pull request to the repository in the ritzy organization.
-
 [[devtools]]
-== Development
+== Development Tools
 
 === Gradle
 
