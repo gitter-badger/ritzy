@@ -1,6 +1,6 @@
 = Ritzy Editor
-Raman Gupta <raman@vivosys.com>
-v1.0, 2015-06-15
+Raman Gupta <rocketraman@gmail.com>
+v1.0, 2015-08-10
 :toc:
 :sectanchors:
 
