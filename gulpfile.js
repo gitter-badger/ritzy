@@ -10,33 +10,95 @@ var runSequence = require('run-sequence')
 var webpack = require('webpack')
 var options = require('minimist')(process.argv.slice(2), {
   alias: {
-    release: 'r',
     debug: 'D',
-    verbose: 'V',
-    builddir: 'd'
+    verbose: 'V'
   },
   boolean: ['release', 'debug', 'verbose'],
   default: {
-    release: false,
     debug: false,
-    verbose: false,
-    builddir: './dist'
+    verbose: false
   }
 })
 
-$.util.log('[args]', ' release = ' + options.release)
 $.util.log('[args]', '   debug = ' + options.debug)
 $.util.log('[args]', ' verbose = ' + options.verbose)
-$.util.log('[args]', 'builddir = ' + options.builddir)
 
 // https://github.com/ai/autoprefixer
 options.autoprefixer = [
   'last 2 version'
 ]
 
-var src = {}
+var paths = {
+  build: 'build',
+  dist: 'dist',
+  lib: 'lib',
+  src: [
+    'src/**/*.js',
+    '!src/server.js',
+    '!src/**/__tests__/**/*.js',
+    '!src/**/__mocks__/**/*.js',
+    '!src/assets/*',
+    '!src/templates/*',
+    '!src/tests/*'
+  ]
+}
+var src = {
+  assets: [
+    'src/assets/**',
+    'src/templates*/**'
+  ],
+  server: [
+    paths.build + '/client.js',
+    paths.build + '/server.js',
+    paths.build + '/templates/**/*'
+  ]
+}
 var watch = false
 var browserSync
+
+var DEVELOPMENT_HEADER = [
+  '/**',
+  ' * Ritzy v<%= version %>',
+  ' */'
+].join('\n') + '\n'
+
+var PRODUCTION_HEADER = [
+  '/**',
+  ' * Ritzy v<%= version %>',
+  ' *',
+  ' * Copyright 2015, VIVO Systems, Inc.',
+  ' * All rights reserved.',
+  ' *',
+  ' * This source code is licensed under the Apache v2 license found in the',
+  ' * LICENSE.txt file in the root directory of this source tree.',
+  ' *',
+  ' */'
+].join('\n') + '\n'
+
+var webpackOpts = function(output, debug, configs) {
+  var autoprefixer = 'last 2 version'
+  return require('./webpack.config.js')(output, debug, options.verbose, configs, autoprefixer)
+}
+var webpackCompletion = function(err, stats) {
+  if(err) {
+    throw new $.util.PluginError('webpack', err, {showStack: true})
+  }
+  var jsonStats = stats.toJson()
+  var statsOptions = { colors: true/*, modulesSort: 'size'*/ }
+  if(jsonStats.errors.length > 0) {
+    if(watch) {
+      $.util.log('[webpack]', stats.toString(statsOptions))
+    } else {
+      throw new $.util.PluginError('webpack', stats.toString(statsOptions))
+    }
+  }
+  if(jsonStats.warnings.length > 0 || options.verbose) {
+    $.util.log('[webpack]', stats.toString(statsOptions))
+  }
+  if(jsonStats.errors.length === 0 && jsonStats.warnings.length === 0) {
+    $.util.log('[webpack]', 'No errors or warnings.')
+  }
+}
 
 // Check the version of node currently being used
 gulp.task('node-version', function(cb) { // eslint-disable-line no-unused-vars
@@ -44,56 +106,33 @@ gulp.task('node-version', function(cb) { // eslint-disable-line no-unused-vars
 })
 
 // The default task
-gulp.task('default', ['sync'])
+gulp.task('default', ['serve'])
 
 // Clean output directory
 gulp.task('clean', del.bind(
-  null, ['.tmp', options.builddir + '/*', '!' + options.builddir + '/.git'], {dot: true}
+  null, ['.tmp', paths.build, paths.lib + '/*', paths.dist + '/*', '!' + paths.dist + '/.git'], {dot: true}
 ))
 
 // Static files
 gulp.task('assets', function() {
-  src.assets = [
-    'src/assets/**',
-    'src/templates*/**'
-  ]
   return gulp.src(src.assets)
-    .pipe($.changed(options.builddir))
-    .pipe(gulp.dest(options.builddir))
+    .pipe($.changed(paths.build))
+    .pipe(gulp.dest(paths.build))
     .pipe($.size({title: 'assets'}))
 })
 
 // Bundle
 gulp.task('bundle', function(cb) {
   var started = false
-  var config = require('./webpack.config.js')(options)
-  var bundler = webpack(config)
-
   function bundle(err, stats) {
-    if(err) {
-      throw new $.util.PluginError('webpack', err, {showStack: true})
-    }
-    var jsonStats = stats.toJson()
-    if(jsonStats.errors.length > 0) {
-      if(watch) {
-        $.util.log('[webpack]', stats.toString({colors: true}))
-      } else {
-        throw new $.util.PluginError('webpack', stats.toString({colors: true}))
-      }
-    }
-    if(jsonStats.warnings.length > 0 || options.verbose) {
-      $.util.log('[webpack]', stats.toString({colors: true}))
-    }
-    if(jsonStats.errors.length === 0 && jsonStats.warnings.length === 0) {
-      $.util.log('[webpack]', 'No errors or warnings.')
-    }
-
+    webpackCompletion(err, stats)
     if (!started) {
       started = true
       return cb()
     }
   }
 
+  var bundler = webpack(webpackOpts(paths.build, true, { server: true, client: true, lib: false }))
   if (watch) {
     bundler.watch(200, bundle)
   } else {
@@ -101,28 +140,22 @@ gulp.task('bundle', function(cb) {
   }
 })
 
-// Build the app from source code
-gulp.task('build', ['clean'], function(cb) {
+// Build and run the app from source code
+gulp.task('run:prep', ['clean'], function(cb) {
   runSequence(['assets', 'bundle'], cb)
 })
 
-// Build and start watching for modifications
-gulp.task('build:watch', function(cb) {
+// Run and start watching for modifications
+gulp.task('run:watch', function(cb) {
   watch = true
-  runSequence('build', function(err) {
+  runSequence('run:prep', function(err) {
     gulp.watch(src.assets, ['assets'])
     cb(err)
   })
 })
 
 // Launch a Node.js/Express server
-gulp.task('serve', ['build:watch'], function(cb) {
-  src.server = [
-    options.builddir + '/client.js',
-    options.builddir + '/server.js',
-    options.builddir + '/templates/**/*'
-  ]
-
+gulp.task('serve', ['run:watch'], function(cb) {
   var started = false
   var cp = require('child_process')
   var assign = require('react/lib/Object.assign')
@@ -133,7 +166,7 @@ gulp.task('serve', ['build:watch'], function(cb) {
   }
 
   var server = (function startup() {
-    var child = cp.fork(options.builddir + '/server.js', nodeArgs, {
+    var child = cp.fork(paths.build + '/server.js', nodeArgs, {
       env: assign({NODE_ENV: 'development'}, process.env)
     })
     child.once('message', function(message) {
@@ -175,16 +208,44 @@ gulp.task('sync', ['serve'], function(cb) {
     browserSync.exit()
   })
 
-  gulp.watch([options.builddir + '/**/*.*'].concat(
+  gulp.watch([paths.build + '/**/*.*'].concat(
     src.server.map(function(file) { return '!' + file })
   ), function(file) {
     browserSync.reload(path.relative(__dirname, file.path))
   })
 })
 
+gulp.task('modules', ['clean'], function() {
+  return gulp
+    .src(paths.src, {base: 'src'})
+    //.pipe($.flatten())
+    .pipe(gulp.dest(paths.lib))
+})
+
+var dist = function(cb, header, debug, lib) {
+  function webpackCb(err, stats) {
+    webpackCompletion(err, stats)
+    gulp.src(paths.build + '/' + lib)
+      .pipe($.header(header, {
+        version: process.env.npm_package_version
+      }))
+      .pipe(gulp.dest(paths.dist))
+    return cb()
+  }
+
+  webpack(webpackOpts(paths.build, debug, { server: false, client: false, lib: true, libName: lib }), webpackCb)
+}
+
+gulp.task('dist', ['modules'], function(cb) {
+  return dist(cb, DEVELOPMENT_HEADER, true, 'ritzy.js')
+})
+
+gulp.task('dist:min', ['modules'], function(cb) {
+  return dist(cb, PRODUCTION_HEADER, false, 'ritzy.min.js')
+})
+
 // Deploy to GitHub Pages
 gulp.task('deploy', function() {
-
   // Remove temp folder
   if (argv.clean) {
     var os = require('os')
@@ -193,7 +254,7 @@ gulp.task('deploy', function() {
     del.sync(repoPath, {force: true})
   }
 
-  return gulp.src(options.builddir + '/**/*')
+  return gulp.src(paths.build + '/**/*')
     .pipe($.if('**/robots.txt', !argv.production ?
       $.replace('Disallow:', 'Disallow: /') : $.util.noop()))
     .pipe($.ghPages({
